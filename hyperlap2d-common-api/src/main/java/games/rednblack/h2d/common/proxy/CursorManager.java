@@ -35,6 +35,7 @@ public class CursorManager extends BaseProxy {
     public static final String NAME = TAG;
 
     private CursorData cursor;
+    private TextureRegion region;
     private CursorData overrideCursor = null;
 
     public CursorManager() {
@@ -45,8 +46,7 @@ public class CursorManager extends BaseProxy {
 
     public void setCursor(CursorData cursor, TextureRegion region) {
         this.cursor = cursor;
-
-        setCursorPixmap(region);
+        this.region = region;
     }
 
     public void setCursor(CursorData cursor) {
@@ -55,11 +55,19 @@ public class CursorManager extends BaseProxy {
 
     public void setOverrideCursor(CursorData cursor) {
         overrideCursor = cursor;
-        setCursorPixmap(null);
+        region = null;
     }
 
     public void removeOverrideCursor() {
         setOverrideCursor(null);
+    }
+
+    public void displayCustomCursor() {
+        setCursorPixmap(region);
+    }
+
+    public void hideCustomCursor() {
+        Gdx.graphics.setSystemCursor(Cursor.SystemCursor.Arrow);
     }
 
     private void setCursorPixmap(TextureRegion region) {

@@ -59,6 +59,7 @@ public class FollowersUIMediator extends SimpleMediator<FollowersUI> {
     @Override
     public String[] listNotificationInterests() {
         return new String[]{
+                MsgAPI.RESIZE,
                 MsgAPI.SCENE_LOADED,
                 MsgAPI.ITEM_DATA_UPDATED,
                 MsgAPI.ITEM_SELECTION_CHANGED,
@@ -99,6 +100,8 @@ public class FollowersUIMediator extends SimpleMediator<FollowersUI> {
                 }
                 break;
             case PanTool.SCENE_PANNED:
+            case MsgAPI.ZOOM_CHANGED:
+            case MsgAPI.RESIZE:
                 updateAllFollowers();
                 break;
             case MsgAPI.ITEM_SELECTION_CHANGED:
@@ -113,9 +116,6 @@ public class FollowersUIMediator extends SimpleMediator<FollowersUI> {
                 break;
             case MsgAPI.TOOL_SELECTED:
                 pushNotificationToFollowers(notification);
-                break;
-            case MsgAPI.ZOOM_CHANGED:
-                updateAllFollowers();
                 break;
             case ConvertToCompositeCommand.DONE:
                 // because entities changed their parent, it's better to re-make all followers

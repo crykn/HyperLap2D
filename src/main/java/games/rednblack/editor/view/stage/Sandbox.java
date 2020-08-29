@@ -24,26 +24,25 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.OrthographicCamera;
+import com.badlogic.gdx.math.Interpolation;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.scenes.scene2d.Touchable;
-import com.badlogic.gdx.utils.Align;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Json;
 import com.badlogic.gdx.utils.viewport.Viewport;
 import com.kotcrab.vis.ui.util.ToastManager;
 import games.rednblack.editor.proxy.*;
 import games.rednblack.editor.renderer.systems.LightSystem;
+import games.rednblack.editor.view.stage.tools.PanTool;
 import games.rednblack.h2d.common.MsgAPI;
 import games.rednblack.h2d.extention.spine.SpineItemType;
 import games.rednblack.editor.HyperLap2DFacade;
 import games.rednblack.editor.renderer.SceneLoader;
 import games.rednblack.editor.renderer.components.ViewPortComponent;
 import games.rednblack.editor.renderer.components.additional.ButtonComponent;
-import games.rednblack.editor.renderer.data.CompositeItemVO;
 import games.rednblack.editor.renderer.data.CompositeVO;
-import games.rednblack.editor.renderer.data.LayerItemVO;
 import games.rednblack.editor.renderer.data.SceneVO;
 import games.rednblack.editor.renderer.systems.PhysicsSystem;
 import games.rednblack.editor.renderer.utils.ComponentRetriever;
@@ -68,6 +67,8 @@ public class Sandbox {
 
     private static Sandbox instance = null;
 
+    private static final float CAMERA_ZOOM_DURATION = 0.65f;
+
     public SceneControlMediator sceneControl;
     public ItemControlMediator itemControl;
 
@@ -76,18 +77,26 @@ public class Sandbox {
     private Entity currentViewingEntity;
 
     public String currentLoadedSceneFileName;
-    private float zoomPercent = 100;
     private UIStage uiStage;
     private ItemSelector selector;
     private HyperLap2DFacade facade;
 
     private ProjectManager projectManager;
     private ResourceManager resourceManager;
+
+    SceneConfigVO sceneConfigVO;
     
     public PixelRect selectionRec;
 
     private SceneLoader sceneLoader;
 	private Array<InputListener> listeners = new Array<>(1);
+
+    Vector3 temp = new Vector3();
+    private float timeToCameraZoomTarget, cameraZoomTarget, cameraZoomOrigin;
+    private boolean moveCameraWithZoom = false;
+
+    private float timeToCameraPosTarget;
+    private Vector2 cameraPosTarget = new Vector2(), cameraPosOrigin = new Vector2();
 
     private Sandbox() {
         init();
@@ -181,9 +190,9 @@ public class Sandbox {
 
         currentViewingEntity = getRootEntity();
 
-        ProjectManager projectManager = HyperLap2DFacade.getInstance().retrieveProxy(ProjectManager.NAME);
-        SceneConfigVO sceneConfigVO = projectManager.getCurrentSceneConfigVO();
+        sceneConfigVO = projectManager.getCurrentSceneConfigVO();
         getCamera().position.set(sceneConfigVO.cameraPosition[0], sceneConfigVO.cameraPosition[1], 0);
+        setZoomPercent(sceneConfigVO.cameraZoom, false);
         projectManager.changeSceneWindowTitle();
 
         //TODO: move this into SceneDataManager!
@@ -196,6 +205,61 @@ public class Sandbox {
 
         CommandManager commandManager = facade.retrieveProxy(CommandManager.NAME);
         commandManager.initHistory();
+    }
+
+    /**
+     * Renderer method used to animate zoom and camera position
+     *
+     * @param deltaTime
+     */
+    public void render(float deltaTime) {
+        if (timeToCameraZoomTarget > 0){
+            getCamera().unproject(temp.set(Gdx.input.getX(), Gdx.input.getY(), 0 ));
+            float px = temp.x;
+            float py = temp.y;
+
+            timeToCameraZoomTarget -= deltaTime;
+            float progress = timeToCameraZoomTarget < 0 ? 1 : 1f - timeToCameraZoomTarget / CAMERA_ZOOM_DURATION;
+            getCamera().zoom = Interpolation.pow3Out.apply(cameraZoomOrigin, cameraZoomTarget, progress);
+            getCamera().update();
+
+            if (moveCameraWithZoom) {
+                getCamera().unproject(temp.set(Gdx.input.getX(), Gdx.input.getY(), 0 ));
+                getCamera().position.add(px - temp.x, py - temp.y, 0);
+                getCamera().update();
+            }
+
+            facade.sendNotification(MsgAPI.ZOOM_CHANGED);
+        }
+
+        if (timeToCameraPosTarget > 0) {
+            timeToCameraPosTarget -= deltaTime;
+            float progress = timeToCameraPosTarget < 0 ? 1 : 1f - timeToCameraPosTarget / CAMERA_ZOOM_DURATION;
+            float x = Interpolation.smoother.apply(cameraPosOrigin.x, cameraPosTarget.x, progress);
+            float y = Interpolation.smoother.apply(cameraPosOrigin.y, cameraPosTarget.y, progress);
+            getCamera().position.set(x, y, 0);
+
+            facade.sendNotification(PanTool.SCENE_PANNED);
+        }
+    }
+
+    public void adjustCameraInComposites() {
+        if (!isViewingRootEntity()) {
+            cameraPosOrigin.set(getCamera().position.x, getCamera().position.y);
+            cameraPosTarget.set(0, 0);
+            timeToCameraPosTarget = CAMERA_ZOOM_DURATION;
+        } else {
+            cameraPosOrigin.set(getCamera().position.x, getCamera().position.y);
+            cameraPosTarget.set(sceneConfigVO.cameraPosition[0], sceneConfigVO.cameraPosition[1]);
+            timeToCameraPosTarget = CAMERA_ZOOM_DURATION;
+        }
+    }
+
+    public void scenePanned() {
+        if (isViewingRootEntity() && timeToCameraPosTarget <= 0) {
+            sceneConfigVO.cameraPosition[0] = getCamera().position.x;
+            sceneConfigVO.cameraPosition[1] = getCamera().position.y;
+        }
     }
 
     /**
@@ -250,11 +314,8 @@ public class Sandbox {
         return sceneControl.getCurrentScene();
     }
 
-    public void prepareSelectionRectangle(float x, float y, boolean setOpacity) {
-        // space is panning, so if we are not, then prepare the selection rectangle
-        if (setOpacity) {
-            selectionRec.setOpacity(0.6f);
-        }
+    public void prepareSelectionRectangle(float x, float y) {
+        selectionRec.setOpacity(0.8f);
         selectionRec.setWidth(0);
         selectionRec.setHeight(0);
         selectionRec.setX(x);
@@ -263,31 +324,25 @@ public class Sandbox {
 
 
     public int getZoomPercent() {
-        return (int)zoomPercent;
+        return (int)sceneConfigVO.cameraZoom;
     }
 
-    public void setZoomPercent(float percent) {
-        zoomPercent = percent;
-        getCamera().zoom = 1f / (zoomPercent / 100f);
-    }
+    public void setZoomPercent(float percent, boolean moveCamera) {
+        sceneConfigVO.cameraZoom = percent;
 
-    public void zoomBy(float amount) {
-        zoomPercent += -amount * 15f;
+        cameraZoomOrigin = getCamera().zoom;
+        cameraZoomTarget = 1f / (sceneConfigVO.cameraZoom / 100f);
 
-        if (zoomPercent < 20) zoomPercent = 20;
-        if (zoomPercent > 1000) zoomPercent = 1000;
-
-        setZoomPercent(zoomPercent);
-        facade.sendNotification(MsgAPI.ZOOM_CHANGED);
+        timeToCameraZoomTarget = CAMERA_ZOOM_DURATION;
+        moveCameraWithZoom = moveCamera;
     }
 
     public void zoomDivideBy(float amount) {
-        zoomPercent /= amount;
+        float zoomPercent = sceneConfigVO.cameraZoom / amount;
         if (zoomPercent < 20) zoomPercent = 20;
         if (zoomPercent > 1000) zoomPercent = 1000;
 
-        setZoomPercent(zoomPercent);
-        facade.sendNotification(MsgAPI.ZOOM_CHANGED);
+        setZoomPercent(zoomPercent, false);
     }
 
     public float getWorldGridSize(){
@@ -319,11 +374,15 @@ public class Sandbox {
     	return sceneControl.getRootEntity();
     }
 
+    public boolean isViewingRootEntity() {
+        return currentViewingEntity.equals(getRootEntity());
+    }
+
     public void overrideAmbientLightInComposite() {
         SceneVO sceneVO = sceneControl.getCurrentSceneVO();
 
         SettingsManager settingsManager = facade.retrieveProxy(SettingsManager.NAME);
-        boolean override = !currentViewingEntity.equals(getRootEntity()) && settingsManager.editorConfigVO.disableAmbientComposite;
+        boolean override = !isViewingRootEntity() && settingsManager.editorConfigVO.disableAmbientComposite;
         sceneLoader.setAmbientInfo(sceneVO, override);
     }
     

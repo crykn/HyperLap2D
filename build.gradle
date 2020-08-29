@@ -29,7 +29,8 @@ ext {
     box2dlightsVersion = '1.5'
     ashleyVersion = '1.7.3'
     spineVersion = '3.8.55.1'
-    visuiVersion = '1.4.6'
+    visuiVersion = '1.4.7-SNAPSHOT'
+    typingLabelVersion = '1.2.0'
 
     packMain = ["art/textures", "assets/style/", "uiskin"]
     packSplash = ["art/splash_textures", "assets/splash/", "splash"]
@@ -95,6 +96,7 @@ dependencies {
     implementation project(":hyperlap2d-runtime-libgdx")
     implementation project(":h2d-libgdx-spine-extension")
 
+    implementation "com.rafaskoberg.gdx:typing-label:$typingLabelVersion"
     implementation "com.kotcrab.vis:vis-ui:$visuiVersion"
     implementation "com.esotericsoftware.spine:spine-libgdx:$spineVersion"
     implementation "com.mortennobel:java-image-scaling:0.8.5"
@@ -117,19 +119,23 @@ runtime {
                'java.desktop',
                'java.compiler',
                'java.logging',
-                'jdk.crypto.cryptoki',
+               'java.management',
+               'jdk.crypto.cryptoki',
                'jdk.crypto.ec',
                'jdk.unsupported']
     distDir = file(buildDir)
 
     jpackage {
         mainJar = dist.archiveFileName.get()
-        imageOptions += ['--app-version', getVersion(), '--vendor', 'Red & Black Games', '--description', 'HyperLap2D Editor',
-                         '--copyright', '(c) 2020, Red & Black Games', '--name', 'HyperLap2D']
+        imageOptions += ['--app-version', getVersion(), '--vendor', 'Red & Black Games', '--description', 'HyperLap2D Editor', '--name', 'HyperLap2D']
         if (osName.contains('windows')) {
             imageOptions += ["--icon", file("icons/icon.ico")]
             installerType = 'msi'
-            installerOptions += ['--win-per-user-install', '--win-dir-chooser', '--win-menu', '--win-shortcut']
+            installerOptions += ['--win-dir-chooser', '--win-menu',
+                                 '--win-shortcut',  '--vendor', 'Red & Black Games',
+                                 '--description', 'HyperLap2D Editor',
+                                 '--win-upgrade-uuid', 'e5f64fb6-111f-41f3-8f33-03b90e1a3a32']
+            resourceDir = file("resources-windows")
         } else if (osName.contains('linux')) {
             imageOptions += ["--icon", file("icons/HyperLap2D.png")]
             installerType = 'deb'
@@ -139,9 +145,12 @@ runtime {
             ]
             resourceDir = file("resources-linux")
         } else if (osName.contains('mac')) {
-            imageOptions += ["--icon", file("icons/icon.icns")]
+            imageOptions += ['--copyright', '(c) 2020, Red &amp; Black Games', "--icon", file("icons/icon.icns")
+                             , '--resource-dir', "${projectDir}/resources-macos"]
             jvmArgs = ['-XstartOnFirstThread', '-Djava.awt.headless=true']
+            installerOptions += ['--verbose','--app-version', getVersion(), '--vendor', 'Red & Black Games', '--resource-dir', "${projectDir}/resources-macos" ]
             installerType = 'dmg'
+            resourceDir = file("resources-macos")
         }
     }
 }

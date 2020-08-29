@@ -104,7 +104,8 @@ public class SandboxMediator extends SimpleMediator<Sandbox> {
                 CompositeCameraChangeCommand.DONE,
                 AddComponentToItemCommand.DONE,
                 RemoveComponentFromItemCommand.DONE,
-                MsgAPI.ITEM_SELECTION_CHANGED
+                MsgAPI.ITEM_SELECTION_CHANGED,
+                PanTool.SCENE_PANNED
         };
     }
 
@@ -123,6 +124,9 @@ public class SandboxMediator extends SimpleMediator<Sandbox> {
                 break;
             case CompositeCameraChangeCommand.DONE:
                 initItemListeners();
+                break;
+            case PanTool.SCENE_PANNED:
+                viewComponent.scenePanned();
                 break;
             default:
                 break;
@@ -251,10 +255,6 @@ public class SandboxMediator extends SimpleMediator<Sandbox> {
             boolean isControlPressed = isControlPressed();
             Sandbox sandbox = Sandbox.getInstance();
 
-            // if control is pressed then z index is getting modified
-            // TODO: key pressed 0 for unckown, should be removed?
-            // TODO: need to make sure OSX Command button works too.
-
             if(currentSelectedTool != null) {
                 currentSelectedTool.keyDown(entity, keycode);
             }
@@ -289,9 +289,8 @@ public class SandboxMediator extends SimpleMediator<Sandbox> {
                     sandbox.getSelector().alignSelections(Align.right);
                 }
                 if (keycode == Input.Keys.NUM_0 || keycode == Input.Keys.NUMPAD_0) {
-                    sandbox.setZoomPercent(100);
                     sandbox.getCamera().position.set(0 ,0, 0);
-                    facade.sendNotification(MsgAPI.ZOOM_CHANGED);
+                    sandbox.setZoomPercent(100, false);
                 }
                 if (keycode == Input.Keys.X) {
                     facade.sendNotification(MsgAPI.ACTION_CUT);
@@ -342,11 +341,17 @@ public class SandboxMediator extends SimpleMediator<Sandbox> {
             }
 
             // Zoom
-            if (keycode == Input.Keys.MINUS && isControlPressed) {
-                sandbox.zoomDivideBy(2f);
-            }
-            if (keycode == Input.Keys.PLUS && isControlPressed) {
-                sandbox.zoomDivideBy(0.5f);
+            if (isControlPressed) {
+                switch (keycode) {
+                    case Input.Keys.SLASH:
+                    case Input.Keys.MINUS:
+                        sandbox.zoomDivideBy(2f);
+                        break;
+                    case Input.Keys.PLUS:
+                    case Input.Keys.RIGHT_BRACKET:
+                        sandbox.zoomDivideBy(0.5f);
+                        break;
+                }
             }
 
             return true;
@@ -454,9 +459,8 @@ public class SandboxMediator extends SimpleMediator<Sandbox> {
                 float zoomPercent = sandbox.getZoomPercent();
                 zoomPercent-=amount*4f;
                 if(zoomPercent < 5 ) zoomPercent = 5;
-                sandbox.setZoomPercent(zoomPercent);
 
-                facade.sendNotification(MsgAPI.ZOOM_CHANGED);
+                sandbox.setZoomPercent(zoomPercent, true);
             }
 
             if (currentSelectedTool != null) {
